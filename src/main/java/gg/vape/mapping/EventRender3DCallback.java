@@ -32,6 +32,15 @@ implements InsertedEventCallback {
     @Override
     public boolean fire() {
         RenderManager.updateInterpolatedRenderPosition(this.N);
+        // 药水效果图标的世界阶段截图：HUD 阶段做离屏截图在部分版本（1.21.11 / 26.1.2）
+        // 上批次绘制不生效、截出来整张全透明，而世界渲染阶段的批次绘制是正常的，
+        // 所以 HUD 只登记请求，统一在这里执行（每次最多处理几个，避免卡顿）。
+        try {
+            gg.vape.utils.render.PotionEffectIconRenderer.flushPendingCaptures();
+        }
+        catch (Throwable throwable) {
+            Vape.logThrowable(throwable);
+        }
         // Both the EventRender3D pass and the tracers pass drain world batches,
         // and each drain's cleanup (resetProjectionMatrix) clears the cached
         // modelViewMatrix. Re-inject the pure-rotation modelViewMatrix captured

@@ -33,6 +33,11 @@ public class PotionEffectIconTexture
 implements PotionEffectIconRenderBackend {
     private GlFramebuffer framebuffer;
 
+    /** 截图后整张 18x18 是否真的画进了内容（否则视为截图失败，交给渲染器重试）。 */
+    public boolean hasContent() {
+        return this.framebuffer != null && this.framebuffer.colorTextureId > 0;
+    }
+
 
 
     @Override
@@ -107,6 +112,11 @@ implements PotionEffectIconRenderBackend {
     public void capture(PotionEffect effect) {
         int iconWidth = 18;
         int iconHeight = 18;
+        // 重试/重截路径：先释放上一次的帧缓冲，避免纹理泄漏。
+        if (this.framebuffer != null) {
+            this.framebuffer.delete();
+            this.framebuffer = null;
+        }
         // Resolve and guard the sprite, its texture and its texture coordinates
         // BEFORE mutating any GL or shared-batch state. On 1.21.11 these can be
         // null; resolving them here lets a missing effect return cleanly without
@@ -177,7 +187,19 @@ implements PotionEffectIconRenderBackend {
             framebufferOverrideSet = true;
             batchManager.flushGuiBatches(0.0f, false);
             createdFramebuffer.bindColorTexture();
-            completed = true;
+            // 读回整张 18x18：一个不透明像素都没有说明精灵没画进该帧缓冲
+            // （HUD 阶段会发生，世界阶段通常正常）。判定失败则丢弃帧缓冲，由
+            // PotionEffectIconRenderer 决定是否下一帧重试。
+            ByteBuffer capturedPixels = ByteBuffer.allocateDirect(iconWidth * iconHeight * 4);
+            GL11.glReadPixels((int)0, (int)0, iconWidth, iconHeight, 6408, 5121, capturedPixels);
+            boolean hasOpaquePixel = false;
+            for (int pixelIndex = 0; pixelIndex < iconWidth * iconHeight; ++pixelIndex) {
+                if ((capturedPixels.get(pixelIndex * 4 + 3) & 0xFF) > 0) {
+                    hasOpaquePixel = true;
+                    break;
+                }
+            }
+            completed = hasOpaquePixel;
         }
         finally {
             BufferedGuiRenderPrimitives.scissorRect = previousScissorRect;
